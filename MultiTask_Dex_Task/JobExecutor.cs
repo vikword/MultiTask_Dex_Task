@@ -7,41 +7,10 @@ namespace MultiTask_Dex_Task
 {
     class JobExecutor : IJobExecutor
     {
-        private class JobItem
-        {
-            private readonly Action _action;
-            private readonly JobExecutor _jobExecutor;
-
-            public JobItem(Action action, JobExecutor jobExecutor)
-            {
-                _action = action;
-                _jobExecutor = jobExecutor;
-            }
-
-            public void ExecuteJob()
-            {
-                try
-                {
-                    _jobExecutor._semaphore.Wait();
-
-                    if (_jobExecutor._cancellationToken.IsCancellationRequested)
-                    {
-                        Console.WriteLine("Задача была отменена, дальнейшая работа не будет произведена.");
-                        return;
-                    }
-                    _action.Invoke();
-                }
-                finally
-                {
-                    _jobExecutor._semaphore.Release();
-                }
-            }
-        }
-
         public int Amount => _tasks.Count;
         private uint _runningTaskCounter;
         private SemaphoreSlim _semaphore;
-        private readonly ConcurrentQueue<JobItem> _tasks = new();
+        private readonly ConcurrentQueue<Task> _tasks = new();
         private readonly CancellationTokenSource _tokenSource;
         private readonly CancellationToken _cancellationToken;
 
@@ -53,7 +22,24 @@ namespace MultiTask_Dex_Task
         
         public void Add(Action action)
         {
-            _tasks.Enqueue(new JobItem(action, this));
+            _tasks.Enqueue(new Task(() =>
+            {
+                try
+                {
+                    _semaphore.Wait();
+
+                    if (_cancellationToken.IsCancellationRequested)
+                    {
+                        Console.WriteLine("Задача была отменена, дальнейшая работа не будет произведена.");
+                        return;
+                    }
+                    action.Invoke();
+                }
+                finally
+                {
+                    _semaphore.Release();
+                }
+            }));
         }
 
         public void Clear()
@@ -70,7 +56,7 @@ namespace MultiTask_Dex_Task
             {
                 ++_runningTaskCounter;
                 Thread.Sleep(1);
-                Task.Factory.StartNew(() => task.ExecuteJob());
+                Task.Factory.StartNew(() => task.Start());
             }
         }
 

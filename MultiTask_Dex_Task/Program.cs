@@ -6,6 +6,7 @@ namespace MultiTask_Dex_Task
 {
     class Program
     {
+        private const int maxConcurrent = 3;
         static void Main()
         {
             var job = new JobExecutor();
@@ -15,7 +16,7 @@ namespace MultiTask_Dex_Task
                 job.Add(() => new TestClass().Test());
             }
 
-            Task.Factory.StartNew(() => job.Start(2));
+            Task.Factory.StartNew(() => job.Start(maxConcurrent));
             Thread.Sleep(100);
             
             job.Clear();
