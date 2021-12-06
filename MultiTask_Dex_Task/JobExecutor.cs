@@ -8,38 +8,50 @@ namespace MultiTask_Dex_Task
     class JobExecutor : IJobExecutor
     {
         public int Amount => _tasks.Count;
-        private uint _runningTaskCounter;
+        private int _runningTaskCounter;
         private SemaphoreSlim _semaphore;
         private readonly ConcurrentQueue<Task> _tasks = new();
-        private readonly CancellationTokenSource _tokenSource;
-        private readonly CancellationToken _cancellationToken;
+        private CancellationTokenSource _tokenSource;
+        private CancellationToken _cancellationToken;
+        public bool IsEnabled { get; private set; }
 
-        public JobExecutor()
+        private void ExecuteAction(Action action)
         {
-            _tokenSource = new CancellationTokenSource();
-            _cancellationToken = _tokenSource.Token;
+            try
+            {
+                _semaphore.Wait();
+
+                if (_cancellationToken.IsCancellationRequested)
+                {
+                    Console.WriteLine("Задача была отменена, дальнейшая работа не будет произведена.");
+                    return;
+                }
+                action.Invoke();
+            }
+            finally
+            {
+                if (IsEnabled)
+                {
+                    Interlocked.Decrement(ref _runningTaskCounter);
+                }
+                _semaphore.Release();
+            }
         }
-        
+
         public void Add(Action action)
         {
-            _tasks.Enqueue(new Task(() =>
+            if (action == null)
             {
-                try
-                {
-                    _semaphore.Wait();
+                throw new ArgumentNullException(nameof(action));
+            }
 
-                    if (_cancellationToken.IsCancellationRequested)
-                    {
-                        Console.WriteLine("Задача была отменена, дальнейшая работа не будет произведена.");
-                        return;
-                    }
-                    action.Invoke();
-                }
-                finally
-                {
-                    _semaphore.Release();
-                }
-            }));
+            if (IsEnabled)
+            {
+                Task.Factory.StartNew(() => ExecuteAction(action));
+                return;
+            }
+
+            _tasks.Enqueue(new Task(() => ExecuteAction(action)));
         }
 
         public void Clear()
@@ -50,19 +62,27 @@ namespace MultiTask_Dex_Task
 
         public void Start(int maxConcurrent)
         {
+            if (IsEnabled)
+            {
+                return;
+            }
+
             _semaphore = new SemaphoreSlim(maxConcurrent);
+            _tokenSource = new CancellationTokenSource();
+            _cancellationToken = _tokenSource.Token;
 
             while (_tasks.TryDequeue(out var task))
             {
-                ++_runningTaskCounter;
-                Thread.Sleep(1);
-                Task.Factory.StartNew(() => task.Start());
+                task.Start();
+                Interlocked.Increment(ref _runningTaskCounter);
             }
+            IsEnabled = true;
         }
 
         public void Stop()
         {
             _tokenSource.Cancel();
+            IsEnabled = false;
             _runningTaskCounter = 0;
             Console.WriteLine($"\nОбработка очереди остановлена.\n");
         }
