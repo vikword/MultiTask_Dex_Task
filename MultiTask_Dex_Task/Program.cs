@@ -30,6 +30,7 @@ namespace MultiTask_Dex_Task
 
 
             Thread.Sleep(2000);
+            Console.WriteLine("Stop");
             job.Stop();
 
             Thread.Sleep(2000);
@@ -40,6 +41,7 @@ namespace MultiTask_Dex_Task
             }
 
             Thread.Sleep(4000);
+            Console.WriteLine("Start");
             job.Start(2);
 
 

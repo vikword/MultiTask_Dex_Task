@@ -13,30 +13,7 @@ namespace MultiTask_Dex_Task
         private readonly ConcurrentQueue<Task> _tasks = new();
         private CancellationTokenSource _tokenSource;
         private CancellationToken _cancellationToken;
-        public bool IsEnabled { get; private set; }
-
-        private void ExecuteAction(Action action)
-        {
-            try
-            {
-                _semaphore.Wait();
-
-                if (_cancellationToken.IsCancellationRequested)
-                {
-                    Console.WriteLine("Задача была отменена, дальнейшая работа не будет произведена.");
-                    return;
-                }
-                action.Invoke();
-            }
-            finally
-            {
-                if (IsEnabled)
-                {
-                    Interlocked.Decrement(ref _runningTaskCounter);
-                }
-                _semaphore.Release();
-            }
-        }
+        private bool _isEnabled;
 
         public void Add(Action action)
         {
@@ -45,13 +22,33 @@ namespace MultiTask_Dex_Task
                 throw new ArgumentNullException(nameof(action));
             }
 
-            if (IsEnabled)
+            _tasks.Enqueue(new Task(() =>
             {
-                Task.Factory.StartNew(() => ExecuteAction(action));
-                return;
-            }
+                try
+                {
+                    _semaphore.Wait();
 
-            _tasks.Enqueue(new Task(() => ExecuteAction(action)));
+                    if (_cancellationToken.IsCancellationRequested)
+                    {
+                        Console.WriteLine("Задача была отменена, дальнейшая работа не будет произведена.");
+                        return;
+                    }
+                    action.Invoke();
+                }
+                finally
+                {
+                    if (_isEnabled)
+                    {
+                        Interlocked.Decrement(ref _runningTaskCounter);
+                    }
+                    _semaphore.Release();
+                }
+            }));
+
+            if (_isEnabled)
+            {
+                Start();
+            }
         }
 
         public void Clear()
@@ -60,29 +57,27 @@ namespace MultiTask_Dex_Task
             _tasks.Clear();
         }
 
-        public void Start(int maxConcurrent)
+        public void Start(int maxConcurrent = 1)
         {
-            if (IsEnabled)
+            if (!_isEnabled)
             {
-                return;
+                _semaphore = new SemaphoreSlim(maxConcurrent);
+                _tokenSource = new CancellationTokenSource();
+                _cancellationToken = _tokenSource.Token;
+                _isEnabled = true;
             }
-
-            _semaphore = new SemaphoreSlim(maxConcurrent);
-            _tokenSource = new CancellationTokenSource();
-            _cancellationToken = _tokenSource.Token;
 
             while (_tasks.TryDequeue(out var task))
             {
                 task.Start();
                 Interlocked.Increment(ref _runningTaskCounter);
             }
-            IsEnabled = true;
         }
 
         public void Stop()
         {
             _tokenSource.Cancel();
-            IsEnabled = false;
+            _isEnabled = false;
             _runningTaskCounter = 0;
             Console.WriteLine($"\nОбработка очереди остановлена.\n");
         }
