@@ -44,11 +44,6 @@ namespace MultiTask_Dex_Task
                     _semaphore.Release();
                 }
             }));
-
-            if (_isEnabled)
-            {
-                Start();
-            }
         }
 
         public void Clear()
@@ -57,21 +52,30 @@ namespace MultiTask_Dex_Task
             _tasks.Clear();
         }
 
-        public void Start(int maxConcurrent = 1)
+        public void Start(int maxConcurrent)
         {
-            if (!_isEnabled)
-            {
-                _semaphore = new SemaphoreSlim(maxConcurrent);
-                _tokenSource = new CancellationTokenSource();
-                _cancellationToken = _tokenSource.Token;
-                _isEnabled = true;
-            }
+            _semaphore = new SemaphoreSlim(maxConcurrent);
+            _tokenSource = new CancellationTokenSource();
+            _cancellationToken = _tokenSource.Token;
+            _isEnabled = true;
 
             while (_tasks.TryDequeue(out var task))
             {
                 task.Start();
                 Interlocked.Increment(ref _runningTaskCounter);
             }
+
+            Task.Factory.StartNew(() =>
+            {
+                while (_isEnabled)
+                {
+                    if (_tasks.TryDequeue(out var task))
+                    {
+                        task.Start();
+                        Interlocked.Increment(ref _runningTaskCounter);
+                    }
+                }
+            });
         }
 
         public void Stop()
