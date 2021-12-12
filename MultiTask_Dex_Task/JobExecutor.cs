@@ -14,6 +14,7 @@ namespace MultiTask_Dex_Task
         private CancellationTokenSource _tokenSource;
         private CancellationToken _cancellationToken;
         private bool _isEnabled;
+        private Thread _taskQueueThread;
 
         public void Add(Action action)
         {
@@ -54,18 +55,17 @@ namespace MultiTask_Dex_Task
 
         public void Start(int maxConcurrent)
         {
+            if (_isEnabled)
+            {
+                return;
+            }
+
             _semaphore = new SemaphoreSlim(maxConcurrent);
             _tokenSource = new CancellationTokenSource();
             _cancellationToken = _tokenSource.Token;
             _isEnabled = true;
 
-            while (_tasks.TryDequeue(out var task))
-            {
-                task.Start();
-                Interlocked.Increment(ref _runningTaskCounter);
-            }
-
-            Task.Factory.StartNew(() =>
+            _taskQueueThread = new Thread(() =>
             {
                 while (_isEnabled)
                 {
@@ -76,6 +76,7 @@ namespace MultiTask_Dex_Task
                     }
                 }
             });
+            _taskQueueThread.Start();
         }
 
         public void Stop()
